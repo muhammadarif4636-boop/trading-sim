@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Trading Simulator</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.json">
+
+<style>
+:root{
+--bg:#0f172a;--card:#020617;--text:#e5e7eb;
+--green:#22c55e;--red:#ef4444;--gray:#94a3b8;
+}
+body{margin:0;font-family:Arial;background:var(--bg);color:var(--text);}
+.container{max-width:430px;margin:auto;padding:20px;}
+.card{background:var(--card);padding:20px;border-radius:18px;}
+h1{text-align:center;margin:0;}
+.subtitle{text-align:center;color:var(--gray);font-size:13px;margin-bottom:10px;}
+
+select,input,button{
+width:100%;padding:10px;border-radius:10px;
+border:none;margin-top:6px;
+background:#020617;color:var(--text);
+}
+
+.action{background:var(--green);font-weight:bold;cursor:pointer}
+.red{background:var(--red)}
+.result{margin-top:12px;padding:14px;border-radius:12px;text-align:center}
+.untung{background:#052e16;color:var(--green)}
+.rugi{background:#450a0a;color:var(--red)}
+.netral{background:#1e293b}
+
+.tabs{display:flex;gap:10px;margin:10px 0}
+.tabs button{flex:1}
+.tabs button.active{background:var(--green);color:#052e16}
+
+.buyCard{
+margin-top:10px;padding:12px;border-radius:12px;
+background:#020617;border:1px solid #1e293b;
+}
+
+small{color:var(--gray)}
+hr{border:0;border-top:1px solid #1e293b;margin:20px 0}
+</style>
+</head>
+
+<body>
+<div class="container">
+<div class="card">
+
+<h1>Trading Simulator</h1>
+<div class="subtitle">Multi Coin • DCA • Target • Stop Loss</div>
+
+<!-- COIN -->
+<label>Coin Aktif</label>
+<select id="coinSelect" onchange="switchCoin()"></select>
+
+<button class="action" onclick="addCoin()">+ Tambah Coin</button>
+<button class="red action" onclick="hapusCoin()">🗑️ Hapus Coin</button>
+
+<div class="tabs">
+<button id="tabDCA" class="active" onclick="setTab('dca')">DCA</button>
+<button id="tabSingle" onclick="setTab('single')">Target / SL</button>
+</div>
+
+<!-- DCA -->
+<div id="dca">
+
+<label>Modal Bersih</label>
+<input id="dcaModal" type="number">
+
+<label>Harga Beli</label>
+<input id="dcaHarga" type="number">
+
+<button class="action" onclick="addBuy()">Tambah Pembelian</button>
+
+<div id="buyList"></div>
+
+<button class="red action" onclick="resetBuy()">Reset Semua Buy</button>
+
+<div id="dcaSummary"></div>
+
+<label>Harga Sekarang</label>
+<input id="hargaNow" type="number">
+
+<button class="action" onclick="hitungDCA()">Hitung Untung / Rugi</button>
+<div id="dcaOut"></div>
+
+</div>
+
+<!-- TARGET / SL -->
+<div id="single" style="display:none">
+
+<label>Modal (IDR)</label>
+<input id="modal">
+
+<label>Jumlah Coin</label>
+<input id="coinQty">
+
+<label>Harga Beli (Avg)</label>
+<input id="hargaBeli">
+
+<label>Target Profit (Rp)</label>
+<input id="tpRp">
+
+<label>Target Profit (%)</label>
+<input id="tpPct">
+<small>Jika Rp diisi, % diabaikan</small>
+
+<button class="action" onclick="hitungTP()">Hitung Target Profit</button>
+<div id="tpOut"></div>
+
+<label>Stop Loss (Rp)</label>
+<input id="slRp">
+
+<label>Stop Loss (%)</label>
+<input id="slPct">
+<small>Jika Rp diisi, % diabaikan</small>
+
+<button class="red action" onclick="hitungSL()">Hitung Stop Loss</button>
+<div id="slOut"></div>
+
+</div>
+
+<hr>
+
+<!-- EXPORT / IMPORT -->
+<button class="action" onclick="exportData()">📤 Export Data</button>
+
+<input type="file" id="importFile" style="display:none" onchange="importData(event)">
+<button class="action" onclick="document.getElementById('importFile').click()">📥 Import Data</button>
+
+</div>
+</div>
+
+<script>
+/* ================== DATA ================== */
+let portfolio = JSON.parse(localStorage.getItem("portfolio")) || {};
+let activeCoin = "";
+
+function save(){
+  localStorage.setItem("portfolio", JSON.stringify(portfolio));
+}
+
+/* ================== COIN ================== */
+function addCoin(){
+  const name = prompt("Nama coin (contoh: SOL, XRP)");
+  if(!name) return;
+  if(portfolio[name]) return alert("Coin sudah ada");
+  portfolio[name] = { buys: [] };
+  activeCoin = name;
+  save(); renderCoins();
+}
+
+function hapusCoin(){
+  if(!activeCoin) return;
+  if(!confirm("Hapus coin "+activeCoin+" beserta datanya?")) return;
+  delete portfolio[activeCoin];
+  activeCoin = Object.keys(portfolio)[0] || "";
+  save(); renderCoins(); renderDCA();
+}
+
+function renderCoins(){
+  coinSelect.innerHTML="";
+  Object.keys(portfolio).forEach(c=>{
+    coinSelect.innerHTML += `<option value="${c}">${c}</option>`;
+  });
+  if(!activeCoin && Object.keys(portfolio).length){
+    activeCoin = Object.keys(portfolio)[0];
+  }
+  coinSelect.value = activeCoin;
+}
+
+function switchCoin(){
+  activeCoin = coinSelect.value;
+  renderDCA();
+}
+
+/* ================== TAB ================== */
+function setTab(t){
+  dca.style.display = t==="dca"?"block":"none";
+  single.style.display = t==="single"?"block":"none";
+  tabDCA.classList.toggle("active",t==="dca");
+  tabSingle.classList.toggle("active",t==="single");
+}
+
+/* ================== DCA ================== */
+function addBuy(){
+  const m=+dcaModal.value,h=+dcaHarga.value;
+  if(!m||!h)return alert("Data belum lengkap");
+  portfolio[activeCoin].buys.push({modal:m,harga:h,coin:m/h});
+  dcaModal.value=""; dcaHarga.value="";
+  save(); renderDCA();
+}
+
+function resetBuy(){
+  if(!confirm("Reset semua buy coin ini?"))return;
+  portfolio[activeCoin].buys=[];
+  save(); renderDCA();
+}
+
+function renderDCA(){
+  if(!activeCoin || !portfolio[activeCoin]) return;
+  const buys=portfolio[activeCoin].buys;
+  let tm=0,tc=0,list="";
+  buys.forEach((b,i)=>{
+    tm+=b.modal; tc+=b.coin;
+    list+=`
+    <div class="buyCard">
+      Buy ${i+1}<br>
+      Modal: Rp${b.modal.toLocaleString()}<br>
+      Harga: Rp${b.harga.toLocaleString()}<br>
+      Coin: ${b.coin.toFixed(8)}
+    </div>`;
+  });
+  buyList.innerHTML=list;
+  if(!tc){ dcaSummary.innerHTML=""; return; }
+  const avg=tm/tc;
+  dcaSummary.innerHTML=`
+  <div class="result netral">
+    Modal: Rp${tm.toLocaleString()}<br>
+    Coin: ${tc.toFixed(8)}<br>
+    Avg Buy: Rp${avg.toLocaleString()}<br>
+    <button class="action" onclick="pakaiKeSingle(${tm},${tc},${avg})">
+      Gunakan ke Target / SL
+    </button>
+  </div>`;
+}
+
+function pakaiKeSingle(m,c,a){
+  modal.value=Math.round(m);
+  coinQty.value=c;
+  hargaBeli.value=Math.round(a);
+  setTab("single");
+}
+
+function hitungDCA(){
+  const now=+hargaNow.value;
+  const buys=portfolio[activeCoin].buys;
+  let tm=0,tc=0;
+  buys.forEach(b=>{tm+=b.modal;tc+=b.coin});
+  if(!now||!tc)return;
+  const sel=(tc*now)-tm;
+  dcaOut.innerHTML=`
+  <div class="result ${sel>0?"untung":"rugi"}">
+    ${sel>0?"UNTUNG":"RUGI"} Rp${sel.toLocaleString()}
+  </div>`;
+}
+
+/* ================== TARGET / SL ================== */
+function hitungTP(){
+  const m=+modal.value,c=+coinQty.value;
+  const rp=+tpRp.value,p=+tpPct.value;
+  if(!m||!c)return;
+  let harga;
+  if(rp>0) harga=(m+rp)/c;
+  else if(p>0) harga=(m+(m*p/100))/c;
+  else return alert("Isi target Rp atau %");
+  tpOut.innerHTML=`<div class="result untung">Target jual di Rp${harga.toLocaleString()}</div>`;
+}
+
+function hitungSL(){
+  const m=+modal.value,c=+coinQty.value;
+  const rp=+slRp.value,p=+slPct.value;
+  if(!m||!c)return;
+  let harga;
+  if(rp>0) harga=(m-rp)/c;
+  else if(p>0) harga=(m-(m*p/100))/c;
+  else return alert("Isi stop loss Rp atau %");
+  slOut.innerHTML=`<div class="result rugi">Stop loss di Rp${harga.toLocaleString()}</div>`;
+}
+
+/* ================== EXPORT / IMPORT ================== */
+function exportData(){
+  const data = {
+    app: "TradingSimulatorPWA",
+    version: "1.0",
+    portfolio: portfolio
+  };
+  const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="trading_simulator_backup.tspwa";
+  a.click();
+}
+
+function importData(e){
+  const file=e.target.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      const data=JSON.parse(ev.target.result);
+      if(data.app!=="TradingSimulatorPWA") return alert("File bukan dari aplikasi ini");
+      portfolio=data.portfolio||{};
+      save(); location.reload();
+    }catch{
+      alert("File tidak valid");
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ================== PWA ================== */
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("service-worker.js");
+}
+
+renderCoins();
+</script>
+
+</body>
+</html>

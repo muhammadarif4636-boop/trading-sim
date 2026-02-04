@@ -1,0 +1,8 @@
+{
+  "name": "Trading Simulator",
+  "short_name": "TradingApp",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a"
+}
